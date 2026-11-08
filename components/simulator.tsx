@@ -34,6 +34,8 @@ export function Simulator() {
   const seq = useRef(0);
   const waiters = useRef(new Map<number, (m: WorkerOut) => void>());
   const loaded = useRef(false);
+  const current = useRef(st);
+  useEffect(() => { current.current = st; }, [st]);
 
   useEffect(() => {
     // estado salvo só existe no navegador: lido depois da montagem para não divergir do HTML do servidor
@@ -49,7 +51,8 @@ export function Simulator() {
     try { localStorage.setItem(KEY, JSON.stringify(st)); } catch { /* ignora */ }
   }, [st]);
 
-  const runBacktest = useCallback(() => {
+  const runBacktest = useCallback((override?: Strategy) => {
+    const st = override ?? current.current;
     if (!worker.current) return;
     if (!st.symbols.length) { setError("Escolha pelo menos um par."); return; }
     if (!st.entry.long?.items.length) { setError("Defina pelo menos uma condição de entrada."); return; }
@@ -63,7 +66,7 @@ export function Simulator() {
       else if (m.type === "error") { setError(m.error); setBusy(false); setStatus(""); setRandomPending(false); waiters.current.delete(id); }
     });
     worker.current.postMessage({ type: "run", id, strategy: st, dataUrl: absolute(DATA_URL) } satisfies WorkerIn);
-  }, [st]);
+  }, []);
 
   const loadWindow = useCallback((t: Trade) => new Promise<{ candles: { t: number; o: number; h: number; l: number; c: number }[]; overlays: { name: string; values: (number | null)[] }[] }>((resolve, reject) => {
     const id = ++seq.current;
@@ -86,7 +89,7 @@ export function Simulator() {
           {Object.entries(TEMPLATES).map(([k, t]) => <option key={k} value={k}>{t.label}</option>)}
         </select>
         <button className="btn" title="Começar do zero" onClick={() => { setSt(structuredClone(BASE)); setResult(null); }}><RotateCcw size={14} /> nova</button>
-        <button className="btn btn-primary" onClick={runBacktest} disabled={busy}><Play size={14} /> {busy ? status || "rodando…" : "Rodar backtest"}</button>
+        <button className="btn btn-primary" onClick={() => runBacktest()} disabled={busy}><Play size={14} /> {busy ? status || "rodando…" : "Rodar backtest"}</button>
         {randomPending && <span className="text-xs text-muted">comparando com entradas aleatórias…</span>}
         <button className={`btn ml-auto ${chat ? "border-accent" : ""}`} onClick={() => setChat(!chat)}><MessageSquare size={14} /> Especialista</button>
       </header>
@@ -104,7 +107,7 @@ export function Simulator() {
             </div>
           )}
         </main>
-        {chat && <Chat strategy={st} result={result} onApply={(s) => { setSt(s); setResult(null); }} onClose={() => setChat(false)} />}
+        {chat && <Chat strategy={st} result={result} onApply={(s) => { setSt(s); setResult(null); runBacktest(s); }} onClose={() => setChat(false)} />}
       </div>
     </div>
   );

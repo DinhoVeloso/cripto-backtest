@@ -30,7 +30,11 @@ function extractStrategy(text: string): Strategy | null {
     const s = JSON.parse(m[1]);
     if (!s || typeof s !== "object" || !Array.isArray(s.indicators) || !s.entry) return null;
     const b = structuredClone(BASE);
-    return { ...b, ...s, side: "long", entry: { ...b.entry, ...s.entry }, stop: { ...b.stop, ...s.stop }, target: { ...b.target, ...s.target },
+    // o modelo às vezes escreve "BTC" em vez de "BTCUSDT" ou um tempo gráfico que não existe
+    const symbols = (Array.isArray(s.symbols) && s.symbols.length ? s.symbols : b.symbols).map((x: string) => { const u = String(x).toUpperCase().replace(/[^A-Z0-9]/g, ""); return u.endsWith("USDT") ? u : `${u}USDT`; });
+    const tf = ["3m", "5m", "15m", "1h", "4h", "1d"].includes(s.tf) ? s.tf : b.tf;
+    const date = (d: unknown, fb: string) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : fb);
+    return { ...b, ...s, symbols, tf, from: date(s.from, b.from), to: date(s.to, b.to), side: "long", entry: { ...b.entry, ...s.entry }, stop: { ...b.stop, ...s.stop }, target: { ...b.target, ...s.target },
       exit: { ...b.exit, ...s.exit, trailing: { ...b.exit.trailing, ...s.exit?.trailing }, partial: { ...b.exit.partial, ...s.exit?.partial } },
       risk: { ...b.risk, ...s.risk }, costs: { ...b.costs, ...s.costs }, validation: { ...b.validation, ...s.validation } };
   } catch { return null; }
@@ -94,7 +98,7 @@ export function Chat({ strategy, result, onApply, onClose }: { strategy: Strateg
               <Text text={text} />
               {st && (
                 <button className="btn mt-2 border-accent text-xs" onClick={() => { onApply(st); setApplied(m.id); }}>
-                  {applied === m.id ? <><Check size={13} /> aplicada no painel</> : "Aplicar esta estratégia no painel"}
+                  {applied === m.id ? <><Check size={13} /> aplicada — clique para rodar de novo</> : "Aplicar e rodar backtest"}
                 </button>
               )}
               {meta?.provider && <div className="mt-1 text-[10px] text-muted">{meta.provider} · {meta.model}</div>}
