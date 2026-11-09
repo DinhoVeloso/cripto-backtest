@@ -31,7 +31,7 @@ function extractStrategy(text: string): Strategy | null {
     if (!s || typeof s !== "object" || !Array.isArray(s.indicators) || !s.entry) return null;
     const b = structuredClone(BASE);
     // o modelo às vezes escreve "BTC" em vez de "BTCUSDT" ou um tempo gráfico que não existe
-    const symbols = (Array.isArray(s.symbols) && s.symbols.length ? s.symbols : b.symbols).map((x: string) => { const u = String(x).toUpperCase().replace(/[^A-Z0-9]/g, ""); return u.endsWith("USDT") ? u : `${u}USDT`; });
+    const symbols = (Array.isArray(s.symbols) && s.symbols.length ? s.symbols : b.symbols).map((x: string) => { const u = String(x).toUpperCase().replace(/[^A-Z0-9]/g, ""); return /(USDT|BRL)$/.test(u) ? u : `${u}USDT`; });
     const tf = ["3m", "5m", "15m", "1h", "4h", "1d"].includes(s.tf) ? s.tf : b.tf;
     const date = (d: unknown, fb: string) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : fb);
     return { ...b, ...s, symbols, tf, from: date(s.from, b.from), to: date(s.to, b.to), side: "long", entry: { ...b.entry, ...s.entry }, stop: { ...b.stop, ...s.stop }, target: { ...b.target, ...s.target },

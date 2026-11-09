@@ -35,6 +35,7 @@ export function Simulator() {
   const waiters = useRef(new Map<number, (m: WorkerOut) => void>());
   const loaded = useRef(false);
   const current = useRef(st);
+  const manifestRef = useRef<Manifest | null>(null);
   useEffect(() => { current.current = st; }, [st]);
 
   useEffect(() => {
@@ -43,7 +44,12 @@ export function Simulator() {
     const w = new Worker(new URL("../lib/engine/worker.ts", import.meta.url), { type: "module" });
     w.onmessage = (ev: MessageEvent<WorkerOut>) => waiters.current.get(ev.data.id)?.(ev.data);
     worker.current = w;
-    fetch(`${DATA_URL}/manifest.json`).then((r) => r.json()).then(setManifest).catch(() => setError("Não foi possível carregar a lista de pares."));
+    fetch(`${DATA_URL}/manifest.json`).then((r) => r.json()).then((m: Manifest) => {
+      manifestRef.current = m;
+      setManifest(m);
+      // estratégia salva pode ter pares que saíram da lista
+      setSt((s) => { const symbols = s.symbols.filter((x) => m.symbols[x]); return symbols.length === s.symbols.length ? s : { ...s, symbols: symbols.length ? symbols : ["BTCUSDT"] }; });
+    }).catch(() => setError("Não foi possível carregar a lista de pares."));
     return () => w.terminate();
   }, []);
 
@@ -55,6 +61,9 @@ export function Simulator() {
     const st = override ?? current.current;
     if (!worker.current) return;
     if (!st.symbols.length) { setError("Escolha pelo menos um par."); return; }
+    const known = manifestRef.current?.symbols;
+    const missing = known ? [...new Set([...st.symbols, ...st.indicators.map((i) => i.symbol).filter((x): x is string => !!x)])].filter((x) => !known[x]) : [];
+    if (missing.length) { setError(`Par sem dados no simulador: ${missing.join(", ")}.`); return; }
     if (!st.entry.long?.items.length) { setError("Defina pelo menos uma condição de entrada."); return; }
     const id = ++seq.current;
     setBusy(true); setError(""); setStatus("baixando dados"); setRandomPending(false);

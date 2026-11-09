@@ -57,7 +57,7 @@ export function StrategyForm({ st, set, manifest }: { st: Strategy; set: (s: Str
             {symbols.filter((s) => s.includes(query)).map((s) => (
               <label key={s} className={`flex cursor-pointer items-center gap-1 rounded px-1.5 py-1 text-xs ${st.symbols.includes(s) ? "bg-accent/20 text-text" : "text-muted hover:bg-panel-2"}`} title={`dados desde ${firstDate(s)}`}>
                 <input type="checkbox" className="accent-accent" checked={st.symbols.includes(s)} onChange={(e) => set({ ...st, symbols: e.target.checked ? [...st.symbols, s] : st.symbols.filter((x) => x !== s) })} />
-                {s.replace("USDT", "")}
+                {s.replace(/USDT$/, "")}
               </label>
             ))}
             {!symbols.length && <p className="col-span-3 text-xs text-muted">carregando a lista de pares…</p>}

@@ -29,7 +29,7 @@ NEXT_PUBLIC_DATA_URL=...           # endereço público dos dados no Blob (produ
 ## Atualizar os dados
 
 ```bash
-python pipeline/build_data.py $(python pipeline/top_pairs.py 30)   # ou a lista de pares desejada
+python pipeline/build_data.py BTCUSDT ETHUSDT ...   # pares publicados: veja PAIRS em lib/ai/prompt.ts
 python pipeline/verify.py BTCUSDT ETHUSDT
 node --env-file=.env.local pipeline/upload_blob.mjs
 ```

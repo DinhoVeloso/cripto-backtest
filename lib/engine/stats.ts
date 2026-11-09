@@ -126,6 +126,9 @@ export function summarize(st: Strategy, prepared: Prepared[], t0 = performance.n
   if (trades.length < 30) warnings.push(`Só ${trades.length} operações: amostra pequena demais para conclusões.`);
   if (m.trades && m.ciLow < 0 && m.ciHigh > 0) warnings.push("O intervalo de confiança do resultado por operação inclui zero: não dá para distinguir de sorte.");
   if (m.maxDdPct >= 50) warnings.push(`A banca chegou a cair ${m.maxDdPct.toFixed(0)}% — depois disso muitas entradas ficam abaixo da compra mínima.`);
+  const brl = st.symbols.filter((s) => s.endsWith("BRL"));
+  if (brl.length && brl.length < st.symbols.length) warnings.push(`${brl.join(", ")} tem preço em reais e os outros pares em dólar: a banca soma as duas moedas como se fossem iguais. Rode os pares em reais separados.`);
+  else if (brl.length) warnings.push("Pares em reais: banca, lucro e taxas deste relatório estão em R$, não em US$.");
   if (m.grossUsd > 0 && m.netUsd < 0) warnings.push("Ganha antes dos custos e perde depois: o problema são as taxas e o slippage.");
   const trainM = metrics(trainTr, curveFrom(trainTr, cap), cap), testM = metrics(testTr, curveFrom(testTr, cap), cap);
   if (trainM.avgR > 0 && testM.trades >= 10 && testM.avgR < 0) warnings.push("Positiva no treino e negativa na validação: sinal clássico de ajuste excessivo.");

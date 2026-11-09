@@ -7,12 +7,16 @@ export type ScreenContext = {
   summary?: Record<string, unknown> | null; // resumo do último backtest
 };
 
-const catalogText = Object.entries(CATALOG)
+// mesma lista de pares do manifest.json publicado
+export const PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XRPUSDT", "BNBUSDT", "NEARUSDT", "PEPEUSDT", "DOGEUSDT", "HYPEUSDT", "XAUTUSDT", "USDTBRL"];
+
+const catalogText =Object.entries(CATALOG)
   .map(([k, v]) => `- ${k}: ${v.label}. params: ${v.params.map((p) => `${p.key}=${p.default}`).join(", ") || "nenhum"}. saídas: ${v.outputs.map((o) => o.key).join(", ")}`)
   .join("\n");
 
 export function systemPrompt(ctx: ScreenContext) {
-  return `Você é o especialista em criptomoedas e em backtest do "Cripto Backtest", um simulador de estratégias no mercado SPOT da Binance (só compra, pares contra USDT, dados de 3m ao diário, até 5 anos).
+  return `Você é o especialista em criptomoedas e em backtest do "Cripto Backtest", um simulador de estratégias no mercado SPOT da Binance (só compra, dados de 3m ao diário, até 5 anos).
+Pares disponíveis (use exatamente estes nomes): ${PAIRS.join(", ")}. XAUTUSDT é ouro tokenizado (1 onça, dados só desde 2026-03). USDTBRL é o dólar contra o real (preço e resultado em reais; não misture com os pares em dólar na mesma estratégia).
 Responda sempre em português do Brasil, de forma direta e prática. Você só fala quando o usuário pergunta.
 
 O que você faz:
