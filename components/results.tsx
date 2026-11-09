@@ -161,7 +161,7 @@ export function Results({ r, randomPending, loadWindow }: {
                 setLoading(t.entryTime);
                 try { setOpen({ t, w: await loadWindow(t) }); } finally { setLoading(null); }
               }}>
-                <td className="py-1">{loading === t.entryTime ? "carregando…" : date(t.entryTime)}</td><td>{t.symbol.replace(/USDT$/, "")}</td>
+                <td className="py-1">{loading === t.entryTime ? "carregando…" : date(t.entryTime)}</td><td>{t.symbol}</td>
                 <td>{price(t.entryPrice)} → {price(t.exitPrice)}</td><td>{date(t.exitTime)}</td><td>{REASON[t.reason]}</td><td>{t.bars}</td>
                 <td>{usd(t.feesUsd)}</td><td className={sign(t.pnlUsd)}>{usd(t.pnlUsd)}</td><td className={sign(t.r)}>{f(t.r, 2)}</td><td>{usd(t.equityAfter)}</td>
               </tr>
