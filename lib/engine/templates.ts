@@ -18,13 +18,13 @@ const c = (left: Operand, op: Cond["op"], right: Operand, k?: number): Cond => (
 
 const today = new Date();
 const iso = (d: Date) => d.toISOString().slice(0, 10);
-const yearsAgo = (y: number) => { const d = new Date(today); d.setUTCFullYear(d.getUTCFullYear() - y); return iso(d); };
+const monthsAgo = (m: number) => { const d = new Date(today); d.setUTCMonth(d.getUTCMonth() - m); return iso(d); };
 
 export const BASE: Strategy = {
   name: "Nova estratégia",
   symbols: ["BTCUSDT"],
-  tf: "1h",
-  from: yearsAgo(5),
+  tf: "5m",
+  from: monthsAgo(6),
   to: iso(today),
   side: "long",
   indicators: [],
@@ -57,14 +57,14 @@ export const TEMPLATES: Record<string, { label: string; about: string; strategy:
     }),
   },
   pctb_trend: {
-    label: "%B com tendência de 1h e ADX",
-    about: "O %B acima, só quando o gráfico de 1h está em alta (EMA50 > EMA200) e o ADX de 5m está abaixo de 25 — a melhor combinação dos nossos testes.",
+    label: "%B com tendência de 5m e ADX",
+    about: "O %B acima, só quando o gráfico de 5m está em alta (EMA50 > EMA200) e o ADX de 1m está abaixo de 25.",
     strategy: make({
-      name: "%B + tendência 1h + ADX", tf: "5m",
+      name: "%B + tendência 5m + ADX", tf: "1m",
       indicators: [
         { id: "bb", type: "bollinger", params: { period: 20, mult: 2, source: "close" } },
-        { id: "ema50h", type: "ema", params: { period: 50, source: "close" }, tf: "1h" },
-        { id: "ema200h", type: "ema", params: { period: 200, source: "close" }, tf: "1h" },
+        { id: "ema50h", type: "ema", params: { period: 50, source: "close" }, tf: "5m" },
+        { id: "ema200h", type: "ema", params: { period: 200, source: "close" }, tf: "5m" },
         { id: "adx", type: "adx", params: { period: 14 } },
       ],
       entry: { ...BASE.entry, long: { mode: "all", items: [c(ind("bb", "pctb"), "crossAbove", n(0)), c(ind("ema50h"), ">", ind("ema200h")), c(ind("adx", "adx"), "<", n(25))] } },
@@ -77,12 +77,12 @@ export const TEMPLATES: Record<string, { label: string; about: string; strategy:
     label: "Bollinger 3 desvios (reversão à média)",
     about: "Candle fecha abaixo da banda inferior de 3 desvios; compra no rompimento da máxima desse candle (ordem stop válida por 5 candles). Stop na mínima recente; alvo na média.",
     strategy: make({
-      name: "Bollinger 3σ", tf: "1h",
+      name: "Bollinger 3σ", tf: "5m",
       indicators: [{ id: "bb", type: "bollinger", params: { period: 20, mult: 3, source: "close" } }],
       entry: { ...BASE.entry, order: "stop", validBars: 5, long: { mode: "all", items: [c(close, "<", ind("bb", "lower"))] } },
       stop: { ...BASE.stop, type: "swing", lookback: 3, minPct: 0.6, maxPct: 10 },
       target: { type: "indicator", value: 0, operand: ind("bb", "mid") },
-      exit: { ...BASE.exit, maxBars: 72 },
+      exit: { ...BASE.exit, maxBars: 288 },
     }),
   },
   orb: {
@@ -102,7 +102,7 @@ export const TEMPLATES: Record<string, { label: string; about: string; strategy:
     label: "Rompimento de 20 candles com filtro",
     about: "Fecha acima da máxima dos 20 candles anteriores, com preço acima da EMA200 e volume 1,5x a média. Stop na mínima dos últimos 5; alvo 2R.",
     strategy: make({
-      name: "Rompe 20 + EMA200 + volume", tf: "15m",
+      name: "Rompe 20 + EMA200 + volume", tf: "5m",
       indicators: [
         { id: "dc", type: "donchian", params: { period: 20 } },
         { id: "ema200", type: "ema", params: { period: 200, source: "close" } },
@@ -111,41 +111,14 @@ export const TEMPLATES: Record<string, { label: string; about: string; strategy:
       entry: { ...BASE.entry, long: { mode: "all", items: [c(close, ">", ind("dc", "upper")), c(close, ">", ind("ema200")), c(ind("vol", "ratio"), ">=", n(1.5))] } },
       stop: { ...BASE.stop, type: "swing", lookback: 5, minPct: 0.6, maxPct: 3 },
       target: { type: "rr", value: 2 },
-      exit: { ...BASE.exit, maxBars: 96 },
-    }),
-  },
-  trend_rsi: {
-    label: "Recuo em tendência (IFR) no 4h",
-    about: "Em tendência de alta diária (preço acima da EMA200 do diário), compra quando o IFR(14) de 4h cruza 35 para cima. Stop de 2 ATR; saída móvel de 3 ATR.",
-    strategy: make({
-      name: "Recuo em tendência", tf: "4h",
-      indicators: [
-        { id: "rsi", type: "rsi", params: { period: 14, source: "close" } },
-        { id: "ema200d", type: "ema", params: { period: 200, source: "close" }, tf: "1d" },
-      ],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(ind("rsi"), "crossAbove", n(35)), c(close, ">", ind("ema200d"))] } },
-      stop: { ...BASE.stop, type: "atr", value: 2, atrPeriod: 14, minPct: 0.5, maxPct: 20 },
-      target: { type: "none", value: 0 },
-      exit: { ...BASE.exit, trailing: { type: "atr", value: 3 } },
-    }),
-  },
-  supertrend: {
-    label: "Supertrend no diário (seguidor de tendência)",
-    about: "Compra quando o Supertrend(10, 3) vira para alta e vende quando vira para baixa. Stop inicial de 3 ATR.",
-    strategy: make({
-      name: "Supertrend", tf: "1d",
-      indicators: [{ id: "st", type: "supertrend", params: { period: 10, mult: 3 } }],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(ind("st", "dir"), "crossAbove", n(0))] } },
-      stop: { ...BASE.stop, type: "atr", value: 3, atrPeriod: 10, minPct: 0.5, maxPct: 40 },
-      target: { type: "none", value: 0 },
-      exit: { ...BASE.exit, long: { mode: "all", items: [c(ind("st", "dir"), "crossBelow", n(0))] } },
+      exit: { ...BASE.exit, maxBars: 288 },
     }),
   },
   macd: {
     label: "Cruzamento do MACD acima da EMA200",
     about: "Linha do MACD cruza a linha de sinal para cima abaixo de zero, com preço acima da EMA200. Stop de 1,5 ATR; alvo 2R.",
     strategy: make({
-      name: "MACD + EMA200", tf: "1h",
+      name: "MACD + EMA200", tf: "5m",
       indicators: [
         { id: "macd", type: "macd", params: { fast: 12, slow: 26, signal: 9, source: "close" } },
         { id: "ema200", type: "ema", params: { period: 200, source: "close" } },

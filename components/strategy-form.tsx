@@ -7,7 +7,7 @@ import type { Manifest } from "@/lib/engine/data";
 import type { IndicatorDef, Strategy } from "@/lib/engine/types";
 import { GroupEditor, OperandPicker } from "./rule-editor";
 
-const TFS = ["3m", "5m", "15m", "1h", "4h", "1d"];
+const TFS = ["1m", "3m", "5m"];
 const TF_RANK: Record<string, number> = Object.fromEntries(TFS.map((t, i) => [t, i]));
 
 function Num({ label, value, onChange, step = 1, min, max, hint, suffix }: { label: string; value: number; onChange: (v: number) => void; step?: number; min?: number; max?: number; hint?: string; suffix?: string }) {

@@ -1,6 +1,6 @@
 """Confere os arquivos gerados contra a API de klines da Binance em janelas sorteadas.
 
-Uso: python pipeline/verify.py BTCUSDT ETHUSDT [--samples 20]
+Uso: python pipeline/verify.py BTCUSDT [--samples 20]
 """
 import argparse
 import gzip

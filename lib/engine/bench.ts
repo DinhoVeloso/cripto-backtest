@@ -13,8 +13,8 @@ const load = (sym: string, tf: string): Series =>
   }));
 
 const name = process.argv[2] ?? "pctb";
-const tf = process.argv[3] ?? "3m";
-const syms = (process.argv[4] ?? "BTCUSDT,ETHUSDT").split(",");
+const tf = process.argv[3] ?? "5m";
+const syms = (process.argv[4] ?? "BTCUSDT").split(",");
 const st = { ...structuredClone(TEMPLATES[name].strategy), symbols: syms, tf };
 const t0 = performance.now();
 const data: Record<string, Record<string, Series>> = {};

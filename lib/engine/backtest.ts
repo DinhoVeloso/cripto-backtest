@@ -11,7 +11,7 @@ import type { Cond, Group, Operand, Strategy, Trade } from "./types";
 
 type Arr = Float64Array;
 export type DataSet = Record<string, Record<string, Series>>; // par -> tempo -> série
-export const TF: Record<string, number> = { "3m": 180, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400 };
+export const TF: Record<string, number> = { "1m": 60, "3m": 180, "5m": 300 };
 
 /** Alinha uma série de outro tempo/par à série base: valor do último candle fechado até o fechamento do candle base. */
 export function align(base: Series, other: Series, values: Arr): Arr {

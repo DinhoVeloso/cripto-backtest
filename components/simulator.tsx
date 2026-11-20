@@ -16,7 +16,12 @@ const KEY = "cb:strategy:v1";
 function loadSaved(): Strategy {
   try {
     const raw = localStorage.getItem(KEY);
-    if (raw) return { ...structuredClone(BASE), ...JSON.parse(raw) };
+    if (raw) {
+      const saved: Strategy = { ...structuredClone(BASE), ...JSON.parse(raw) };
+      // estratégia salva antes da mudança pode usar tempos gráficos que não existem mais (15m, 1h, 4h, 1d)
+      const okTf = (t?: string) => !t || t in TF;
+      if (okTf(saved.tf) && (saved.indicators ?? []).every((d) => okTf(d.tf))) return saved;
+    }
   } catch { /* sem armazenamento: começa do modelo */ }
   return structuredClone(TEMPLATES.pctb_trend.strategy);
 }
@@ -111,7 +116,7 @@ export function Simulator() {
           {result ? <Results r={result} randomPending={randomPending} loadWindow={loadWindow} /> : (
             <div className="mx-auto mt-16 max-w-xl text-center text-sm text-muted">
               <p className="mb-2 text-base text-text">Monte a estratégia no painel à esquerda e clique em <b>Rodar backtest</b>.</p>
-              <p>Dados reais do spot da Binance, até 5 anos, de 3 minutos ao diário. O cálculo roda no seu navegador e considera taxas, slippage, banca e limites de risco.</p>
+              <p>Dados reais do BTCUSDT no spot da Binance, últimos 6 meses, em 1, 3 e 5 minutos. O cálculo roda no seu navegador e considera taxas, slippage, banca e limites de risco.</p>
               <p className="mt-3">{st.symbols.length} par(es) · {st.tf} · {st.from} a {st.to}</p>
             </div>
           )}

@@ -8,15 +8,15 @@ export type ScreenContext = {
 };
 
 // mesma lista de pares do manifest.json publicado
-export const PAIRS = ["BTCUSDT", "ETHUSDT", "SOLUSDT", "ZECUSDT", "XRPUSDT", "BNBUSDT", "NEARUSDT", "PEPEUSDT", "DOGEUSDT", "HYPEUSDT", "XAUTUSDT", "USDTBRL"];
+export const PAIRS = ["BTCUSDT"];
 
 const catalogText =Object.entries(CATALOG)
   .map(([k, v]) => `- ${k}: ${v.label}. params: ${v.params.map((p) => `${p.key}=${p.default}`).join(", ") || "nenhum"}. saídas: ${v.outputs.map((o) => o.key).join(", ")}`)
   .join("\n");
 
 export function systemPrompt(ctx: ScreenContext) {
-  return `Você é o especialista em criptomoedas e em backtest do "Cripto Backtest", um simulador de estratégias no mercado SPOT da Binance (só compra, dados de 3m ao diário, até 5 anos).
-Pares disponíveis (use exatamente estes nomes): ${PAIRS.join(", ")}. XAUTUSDT é ouro tokenizado (1 onça, dados só desde 2026-03). USDTBRL é o dólar contra o real (preço e resultado em reais; não misture com os pares em dólar na mesma estratégia).
+  return `Você é o especialista em criptomoedas e em backtest do "Cripto Backtest", um simulador de estratégias no mercado SPOT da Binance (só compra, só BTCUSDT, candles de 1m, 3m e 5m, últimos 6 meses).
+Par disponível (use exatamente este nome): ${PAIRS.join(", ")}. Tempos gráficos disponíveis: 1m, 3m e 5m (não existem 15m, 1h, 4h nem 1d). Filtros de tempo maior só podem usar 3m ou 5m. Os dados cobrem apenas os últimos 6 meses.
 Responda sempre em português do Brasil, de forma direta e prática. Você só fala quando o usuário pergunta.
 
 O que você faz:
@@ -36,7 +36,7 @@ Formato (TypeScript):
 type Operand = {kind:"ind",ref:string,out:string,shift?:number} | {kind:"price",field:"open"|"high"|"low"|"close"|"volume"|"hl2"|"hlc3"|"ohlc4",shift?:number} | {kind:"time",field:"hour"|"weekday"|"minute"} | {kind:"num",value:number}
 type Cond = {left:Operand, op:">"|"<"|">="|"<="|"crossAbove"|"crossBelow"|"risingFor"|"fallingFor", right:Operand, n?:number}
 type Group = {mode:"all"|"any", items:(Cond|Group)[]}
-Strategy = {name, symbols:string[], tf:"3m"|"5m"|"15m"|"1h"|"4h"|"1d", from:"AAAA-MM-DD", to, side:"long",
+Strategy = {name, symbols:string[], tf:"1m"|"3m"|"5m", from:"AAAA-MM-DD", to, side:"long",
  indicators:{id,type,params,tf?,symbol?}[],  // tf maior que o da estratégia = filtro de tempo maior; symbol "BTCUSDT" = filtro pelo BTC
  entry:{long:Group, order:"market"|"limit"|"stop", offsetPct, validBars, cooldownBars},
  stop:{type:"percent"|"atr"|"swing"|"indicator"|"none", value, atrPeriod, lookback, bufferPct, operand?, minPct, maxPct},

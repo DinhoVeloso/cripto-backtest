@@ -1,10 +1,10 @@
 # Cripto Backtest
 
-Simulador de estratégias para o **spot da Binance** (só compra), com até 5 anos de candles reais (3m a diário), painel com dezenas de variáveis e um chat com especialista em cripto (IA gratuita).
+Simulador de estratégias para o **BTCUSDT no spot da Binance** (só compra), com os últimos 6 meses de candles reais (1m, 3m e 5m), painel com dezenas de variáveis e um chat com especialista em cripto (IA gratuita).
 
 ## Como funciona
 
-- **Dados** (`pipeline/`): `build_data.py` baixa os candles de 1m de data.binance.vision (com checksum), monta 3m/5m/15m/1h/4h/1d e grava arquivos compactados em `out/spot/`. `verify.py` confere contra a API da Binance. `upload_blob.mjs` envia para o Vercel Blob (só o que mudou).
+- **Dados** (`pipeline/`): `build_data.py` baixa os candles de 1m de data.binance.vision (com checksum), monta 3m/5m e grava arquivos compactados em `out/spot/`, só da janela de 6 meses (o que sai da janela é apagado). `verify.py` confere contra a API da Binance. `upload_blob.mjs` envia para o Vercel Blob (só o que mudou).
 - **Motor** (`lib/engine/`): roda no navegador, num Web Worker. Sinais só com candles fechados, stop vence alvo no mesmo candle, ordem limitada só executa se o preço passar, taxas maker/taker e slippage, banca única para vários pares, limites diários. Relatório com treino × validação, entradas aleatórias e Monte Carlo.
 - **Especialista** (`app/api/chat`, `lib/ai/`): Groq → Gemini → OpenRouter (troca sozinho quando um falha). Só responde quando chamado. Vê a estratégia e o resultado na tela e pode montar estratégias para aplicar no painel.
 
@@ -29,8 +29,8 @@ NEXT_PUBLIC_DATA_URL=...           # endereço público dos dados no Blob (produ
 ## Atualizar os dados
 
 ```bash
-python pipeline/build_data.py BTCUSDT ETHUSDT ...   # pares publicados: veja PAIRS em lib/ai/prompt.ts
-python pipeline/verify.py BTCUSDT ETHUSDT
+python pipeline/build_data.py BTCUSDT   # padrão: últimos 6 meses (--months N para mudar)
+python pipeline/verify.py BTCUSDT
 node --env-file=.env.local pipeline/upload_blob.mjs
 ```
 

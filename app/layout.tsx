@@ -7,7 +7,7 @@ const geistMono = Geist_Mono({ variable: "--font-geist-mono", subsets: ["latin"]
 
 export const metadata: Metadata = {
   title: "Cripto Backtest",
-  description: "Simulador de estratégias para o spot cripto com até 5 anos de dados reais.",
+  description: "Simulador de estratégias para o spot cripto com 6 meses de dados reais do BTCUSDT.",
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {

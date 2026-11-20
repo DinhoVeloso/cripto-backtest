@@ -1,7 +1,8 @@
 """Baixa candles de 1m do spot da Binance (data.binance.vision) e gera os arquivos do simulador.
 
-Uso:  python pipeline/build_data.py BTCUSDT ETHUSDT [--start 2021-11]
+Uso:  python pipeline/build_data.py BTCUSDT [--months 6]
 Saída: out/spot/{PAR}/{tempo}/{ano}.bin.gz  +  out/spot/manifest.json
+Guarda só os últimos N meses (padrão 6), em 1m, 3m e 5m. Arquivos fora dessa janela são apagados a cada execução.
 
 Formato .bin (little-endian), depois comprimido com gzip:
   cabeçalho 32 bytes: b"CBK1", versão u8, casas u8, reservado u16, tempo_s u32, n u32, t0 u32 (abertura do 1º candle, s),
@@ -35,7 +36,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RAW = os.path.join(ROOT, ".cache", "raw")
 OUT = os.path.join(ROOT, "out", "spot")
 BASE = "https://data.binance.vision/data/spot"
-TIMEFRAMES = {"3m": 180, "5m": 300, "15m": 900, "1h": 3600, "4h": 14400, "1d": 86400}
+TIMEFRAMES = {"1m": 60, "3m": 180, "5m": 300}
+DEFAULT_MONTHS = 6
 UA = {"User-Agent": "cripto-backtest-data"}
 
 
@@ -157,8 +159,20 @@ def months(start, end):
         y, m = (y + 1, 1) if m == 12 else (y, m + 1)
 
 
-def build(sym, start, log):
+def cutoff_date(months):
+    """Primeiro dia (00:00 UTC) da janela: hoje menos N meses."""
     today = datetime.now(timezone.utc).date()
+    y, m = today.year, today.month - months
+    while m < 1:
+        y, m = y - 1, m + 12
+    day = min(today.day, 28)
+    return date(y, m, day)
+
+
+def build(sym, cutoff, log):
+    today = datetime.now(timezone.utc).date()
+    start = (cutoff.year, cutoff.month)
+    cut_ts = int(datetime(cutoff.year, cutoff.month, cutoff.day, tzinfo=timezone.utc).timestamp())
     last_month = (today.replace(day=1) - timedelta(days=1))
     jobs = [("monthly", f"{y}-{m:02d}") for y, m in months(start, (last_month.year, last_month.month))]
     d = today.replace(day=1)
@@ -182,6 +196,7 @@ def build(sym, start, log):
     # atravessa dois arquivos, então cada arquivo é agrupado sozinho e sem guardar o 1m na memória.
     for p in paths:
         rows, d_ = read_zip(p)
+        rows = [r for r in rows if r[0] >= cut_ts]  # só a janela pedida (o mês do corte vem inteiro)
         if not rows:
             continue
         dec = max(dec, d_)
@@ -207,22 +222,53 @@ def build(sym, start, log):
     return info
 
 
+def prune(manifest):
+    """Apaga de out/ e do cache bruto tudo que não faz parte da janela atual."""
+    keep = {rel for info in manifest["symbols"].values() for rel in info["files"]}
+    for dirpath, _, names in os.walk(OUT):
+        for n in names:
+            rel = os.path.relpath(os.path.join(dirpath, n), OUT).replace(os.sep, "/")
+            if n.endswith(".gz") and rel not in keep:
+                os.remove(os.path.join(dirpath, n))
+    for dirpath, dirs, names in os.walk(OUT, topdown=False):
+        if dirpath != OUT and not os.listdir(dirpath):
+            os.rmdir(dirpath)
+
+
+def prune_raw(symbols, cutoff):
+    """Cache de zips: mantém só os pares pedidos e os meses/dias a partir do corte."""
+    if not os.path.isdir(RAW):
+        return
+    first = cutoff.strftime("%Y-%m")
+    for sym in os.listdir(RAW):
+        d = os.path.join(RAW, sym)
+        for n in os.listdir(d):
+            stamp = n[len(sym) + 4:-4]  # SYM-1m-AAAA-MM[-DD].zip
+            if sym not in symbols or stamp[:7] < first:
+                os.remove(os.path.join(d, n))
+        if not os.listdir(d):
+            os.rmdir(d)
+
+
 def main():
     sys.stdout.reconfigure(encoding="utf-8")
     ap = argparse.ArgumentParser()
     ap.add_argument("symbols", nargs="+")
-    ap.add_argument("--start", default="2021-11")
+    ap.add_argument("--months", type=int, default=DEFAULT_MONTHS)
     a = ap.parse_args()
-    start = tuple(int(x) for x in a.start.split("-"))
+    cutoff = cutoff_date(a.months)
+    print(f"janela: {cutoff} até hoje ({a.months} meses)")
     os.makedirs(OUT, exist_ok=True)
     mpath = os.path.join(OUT, "manifest.json")
-    manifest = json.load(open(mpath, encoding="utf-8")) if os.path.exists(mpath) else {"market": "spot", "symbols": {}}
+    manifest = {"market": "spot", "symbols": {}}  # sempre refeito: só os pares pedidos ficam
     for sym in a.symbols:
         t = time.time()
-        info = build(sym.upper(), start, print)
+        info = build(sym.upper(), cutoff, print)
         if info:
             manifest["symbols"][sym.upper()] = info
         print(f"  ({time.time() - t:.0f}s)")
+    prune(manifest)
+    prune_raw({s.upper() for s in a.symbols}, cutoff)
     manifest["updated"] = int(time.time())
     manifest["timeframes"] = TIMEFRAMES
     with open(mpath, "w", encoding="utf-8") as f:
