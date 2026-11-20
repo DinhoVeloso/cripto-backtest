@@ -36,9 +36,9 @@ export function EquityChart({ points, capital, split }: { points: { t: number; v
 
 export type Candle = { t: number; o: number; h: number; l: number; c: number };
 
-export function TradeChart({ candles, overlays, entry, exit, stop }: {
+export function TradeChart({ candles, overlays, entry, exit, side }: {
   candles: Candle[]; overlays: { name: string; values: (number | null)[] }[];
-  entry: { t: number; p: number }; exit: { t: number; p: number; win: boolean }; stop: number;
+  entry: { t: number; p: number }; exit: { t: number; p: number; win: boolean }; side: 1 | -1;
 }) {
   const colors = ["#a78bfa", "#f472b6", "#facc15", "#2dd4bf", "#fb923c", "#60a5fa"];
   const el = useChart((chart) => {
@@ -48,13 +48,11 @@ export function TradeChart({ candles, overlays, entry, exit, stop }: {
       const s = chart.addSeries(LineSeries, { color: colors[k % colors.length], lineWidth: 1, priceLineVisible: false, lastValueVisible: false, title: o.name });
       s.setData(o.values.map((v, i) => (v === null ? { time: candles[i].t as UTCTimestamp } : { time: candles[i].t as UTCTimestamp, value: v })));
     });
-    cs.createPriceLine({ price: stop, color: "#ef4444", lineStyle: 2, lineWidth: 1, title: "stop" });
-    cs.createPriceLine({ price: entry.p, color: "#3b82f6", lineStyle: 2, lineWidth: 1, title: "entrada" });
     const marks: SeriesMarker<Time>[] = [
-      { time: entry.t as UTCTimestamp, position: "belowBar", color: "#3b82f6", shape: "arrowUp", text: "compra" },
-      { time: exit.t as UTCTimestamp, position: "aboveBar", color: exit.win ? "#22c55e" : "#ef4444", shape: "arrowDown", text: "saída" },
+      { time: entry.t as UTCTimestamp, position: side === 1 ? "belowBar" : "aboveBar", color: "#3b82f6", shape: side === 1 ? "arrowUp" : "arrowDown", text: side === 1 ? "aposta: sobe" : "aposta: desce" },
+      { time: exit.t as UTCTimestamp, position: "aboveBar", color: exit.win ? "#22c55e" : "#ef4444", shape: "circle", text: exit.win ? "ganhou (candle " + (side === 1 ? "verde" : "vermelho") + ")" : "perdeu (candle " + (side === 1 ? "vermelho/doji" : "verde/doji") + ")" },
     ];
     createSeriesMarkers(cs, marks.sort((a, b) => (a.time as number) - (b.time as number)));
-  }, [candles, overlays, entry, exit, stop]);
+  }, [candles, overlays, entry, exit, side]);
   return <div ref={el} className="h-96 w-full" />;
 }

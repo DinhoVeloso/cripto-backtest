@@ -21,6 +21,17 @@ export type CondOp = ">" | "<" | ">=" | "<=" | "crossAbove" | "crossBelow" | "ri
 export type Cond = { left: Operand; op: CondOp; right: Operand; n?: number };
 export type Group = { mode: "all" | "any"; items: (Cond | Group)[] };
 
+/** Opções binárias: você aposta durante o candle do sinal (antes dos 5 s finais) e o resultado é a COR do candle seguinte:
+ *  verde (fechou acima da abertura) = "sobe" ganha; vermelho = "desce" ganha. O preço de entrada não conta. */
+export type BinaryOpts = {
+  payoutPct: number; // ganho em % do valor apostado quando acerta (quando erra perde 100% do valor)
+  stakeMode: "fixed" | "percent";
+  stake: number; // US$ (fixed) ou % da banca (percent)
+  rearm?: Group; // depois de uma aposta perdida, só volta a apostar depois de um candle que cumpra isto
+  allowOverlap: boolean; // várias apostas abertas ao mesmo tempo
+  stopWhenBroke?: boolean; // true: para de apostar quando a banca não cobre o valor. Padrão (false): segue apostando, a banca pode ficar negativa (serve para medir o acerto depois de uma ruína)
+};
+
 export type Strategy = {
   name: string;
   symbols: string[];
@@ -72,6 +83,7 @@ export type Strategy = {
   };
   costs: { preset: string; takerPct: number; makerPct: number; slippagePct: number };
   validation: { testPct: number; randomRuns: number; monteCarloRuns: number; seed: number };
+  binary: BinaryOpts;
 };
 
 export type Trade = {
@@ -90,7 +102,7 @@ export type Trade = {
   pnlUsd: number; // líquido
   r: number; // pnl / risco planejado
   bars: number;
-  reason: "stop" | "target" | "exit" | "time" | "trail" | "breakeven" | "end";
+  reason: "stop" | "target" | "exit" | "time" | "trail" | "breakeven" | "end" | "win" | "loss";
   equityAfter: number;
 };
 

@@ -26,7 +26,7 @@ export function align(base: Series, other: Series, values: Arr): Arr {
   return out;
 }
 
-class Compiler {
+export class Compiler {
   private cache = new Map<string, Arr>();
   private indCache = new Map<string, Record<string, Arr>>();
   constructor(private st: Strategy, private data: DataSet, private symbol: string, readonly base: Series) {}

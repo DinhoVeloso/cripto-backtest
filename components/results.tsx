@@ -2,6 +2,7 @@
 import { useMemo, useState } from "react";
 import { AlertTriangle, X } from "lucide-react";
 import type { Metrics, Result, Trade } from "@/lib/engine/types";
+import { breakEvenPct } from "@/lib/engine/binary";
 import { EquityChart, TradeChart, type Candle } from "./charts";
 
 const usd = (v: number) => `${v < 0 ? "-" : ""}US$ ${Math.abs(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -9,7 +10,8 @@ const f = (v: number, d = 2) => (Number.isFinite(v) ? v.toLocaleString("pt-BR", 
 const sign = (v: number) => (v > 0 ? "text-up" : v < 0 ? "text-down" : "");
 const date = (t: number) => new Date(t * 1000).toISOString().slice(0, 16).replace("T", " ");
 const price = (p: number) => p.toLocaleString("pt-BR", { maximumFractionDigits: p >= 1000 ? 2 : p >= 1 ? 4 : 8 });
-const REASON: Record<Trade["reason"], string> = { stop: "stop", target: "alvo", exit: "regra de saída", time: "tempo", trail: "stop móvel", breakeven: "no zero a zero", end: "fim do período" };
+const REASON: Record<Trade["reason"], string> = { stop: "stop", target: "alvo", exit: "regra de saída", time: "tempo", trail: "stop móvel", breakeven: "no zero a zero", end: "fim do período", win: "ganhou", loss: "perdeu" };
+const SIDE = (t: Trade) => (t.side === 1 ? "sobe" : "desce");
 
 function Card({ label, value, sub, cls = "" }: { label: string; value: string; sub?: string; cls?: string }) {
   return (
@@ -25,8 +27,8 @@ function MiniMetrics({ m, title }: { m: Metrics; title: string }) {
   return (
     <div className="flex-1">
       <div className="mb-1 text-xs text-muted">{title}</div>
-      <div className={`num text-base font-semibold ${sign(m.avgR)}`}>{f(m.avgR, 3)} R/op</div>
-      <div className="num text-xs text-muted">{m.trades} operações · acerto {f(m.winRate, 0)}% · {usd(m.netUsd)}</div>
+      <div className={`num text-base font-semibold ${sign(m.avgR)}`}>{f(m.avgR * 100, 1)}% por aposta</div>
+      <div className="num text-xs text-muted">{m.trades} apostas · acerto {f(m.winRate, 1)}% · {usd(m.netUsd)}</div>
     </div>
   );
 }
@@ -36,6 +38,13 @@ export function Results({ r, randomPending, loadWindow }: {
   loadWindow: (t: Trade) => Promise<{ candles: Candle[]; overlays: { name: string; values: (number | null)[] }[] }>;
 }) {
   const m = r.metrics;
+  const be = breakEvenPct(r.strategy.binary.payoutPct);
+  const wins = r.trades.filter((t) => t.pnlUsd > 0).length;
+  const sideStats = useMemo(() => {
+    const calc = (sd: 1 | -1) => { const tr = r.trades.filter((t) => t.side === sd); const w = tr.filter((t) => t.pnlUsd > 0).length; return { trades: tr.length, winRate: tr.length ? (w / tr.length) * 100 : 0, netUsd: tr.reduce((x, t) => x + t.pnlUsd, 0) }; };
+    return { up: calc(1), down: calc(-1) };
+  }, [r.trades]);
+  const side = (sd: 1 | -1) => (sd === 1 ? sideStats.up : sideStats.down);
   const [page, setPage] = useState(0);
   const [open, setOpen] = useState<{ t: Trade; w: Awaited<ReturnType<typeof loadWindow>> } | null>(null);
   const [loading, setLoading] = useState<number | null>(null);
@@ -52,20 +61,20 @@ export function Results({ r, randomPending, loadWindow }: {
       )}
 
       <div className="grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-5">
-        <Card label="Resultado líquido" value={usd(m.netUsd)} sub={`${f(m.returnPct, 1)}% · ao ano ${f(m.cagrPct, 1)}%`} cls={sign(m.netUsd)} />
-        <Card label="Resultado por operação" value={`${f(m.avgR, 3)} R`} sub={`IC 95%: ${f(m.ciLow, 2)} a ${f(m.ciHigh, 2)}`} cls={sign(m.avgR)} />
-        <Card label="Operações" value={String(m.trades)} sub={`acerto ${f(m.winRate, 1)}% · ${f(m.avgBars, 0)} candles em média`} />
+        <Card label="Resultado líquido" value={usd(m.netUsd)} sub={`${f(m.returnPct, 1)}% da banca`} cls={sign(m.netUsd)} />
+        <Card label="Acerto" value={`${f(m.winRate, 1)}%`} sub={`mínimo para empatar: ${f(be, 1)}%`} cls={m.winRate >= be ? "text-up" : "text-down"} />
+        <Card label="Apostas" value={String(m.trades)} sub={`${wins} ganhas · ${m.trades - wins} perdidas`} />
+        <Card label="Lucro por aposta" value={`${f(m.avgR * 100, 1)}%`} sub={`do valor apostado · IC 95%: ${f(m.ciLow * 100, 1)}% a ${f(m.ciHigh * 100, 1)}%`} cls={sign(m.avgR)} />
         <Card label="Queda máxima" value={`${f(m.maxDdPct, 1)}%`} sub={`pior sequência: ${m.maxLosingStreak} perdas`} cls={m.maxDdPct > 30 ? "text-down" : ""} />
-        <Card label="Custos pagos" value={usd(m.feesUsd)} sub={`bruto ${usd(m.grossUsd)}`} />
-        <Card label="Fator de lucro" value={f(m.profitFactor, 2)} sub={`Sharpe ${f(m.sharpe, 2)}`} />
-        <Card label="Média por operação" value={usd(m.expectancyUsd)} cls={sign(m.expectancyUsd)} sub={`melhor ${f(m.bestR, 1)}R · pior ${f(m.worstR, 1)}R`} />
-        <Card label="Tempo posicionado" value={`${f(m.exposurePct, 1)}%`} sub="por par" />
-        <Card label="Sinais" value={String(r.signals)} sub={`${Object.values(r.skipped).reduce((a, b) => a + b, 0)} ignorados`} />
+        <Card label="Média por aposta" value={usd(m.expectancyUsd)} cls={sign(m.expectancyUsd)} sub={`fator de lucro ${f(m.profitFactor, 2)}`} />
+        <Card label="Sobe" value={`${f(side(1).winRate, 1)}%`} sub={`${side(1).trades} apostas · ${usd(side(1).netUsd)}`} cls={sign(side(1).netUsd)} />
+        <Card label="Desce" value={`${f(side(-1).winRate, 1)}%`} sub={`${side(-1).trades} apostas · ${usd(side(-1).netUsd)}`} cls={sign(side(-1).netUsd)} />
+        <Card label="Sinais" value={String(r.signals)} sub={`${Object.values(r.skipped).reduce((x, y) => x + y, 0)} ignorados`} />
         <Card label="Cálculo" value={`${f(r.ms / 1000, 1)} s`} sub="no seu navegador" />
       </div>
 
       <div className="card p-3">
-        <div className="mb-2 text-sm font-medium">Patrimônio (marcado a mercado, diário)</div>
+        <div className="mb-2 text-sm font-medium">Banca (fim de cada dia; pode ficar negativa se a opção de parar estiver desligada)</div>
         <EquityChart points={r.equity} capital={r.strategy.risk.capital} split={r.splitTime} />
       </div>
 
@@ -79,15 +88,15 @@ export function Results({ r, randomPending, loadWindow }: {
           <p className="mt-2 text-xs text-muted">Se você ajustou a estratégia olhando o resultado, só a validação conta.</p>
         </div>
         <div className="card p-3">
-          <div className="mb-2 text-sm font-medium">Contra entradas aleatórias</div>
+          <div className="mb-2 text-sm font-medium">Contra apostas aleatórias</div>
           {r.random ? (
             <>
-              <div className="num text-base font-semibold">aleatório: {f(r.random.avgR, 3)} R/op</div>
-              <div className="num text-xs text-muted">faixa de 90%: {f(r.random.p5, 3)} a {f(r.random.p95, 3)} · {r.random.runs} rodadas</div>
+              <div className="num text-base font-semibold">aleatório: {f(r.random.avgR * 100, 1)}% por aposta</div>
+              <div className="num text-xs text-muted">faixa de 90%: {f(r.random.p5 * 100, 1)}% a {f(r.random.p95 * 100, 1)}% · {r.random.runs} rodadas</div>
               <div className={`num mt-1 text-sm ${r.random.beatPct >= 95 ? "text-up" : "text-warn"}`}>a estratégia superou {f(r.random.beatPct, 0)}% das rodadas</div>
             </>
           ) : <p className="text-xs text-muted">{randomPending ? "calculando…" : "desligado ou sem sinais"}</p>}
-          <p className="mt-2 text-xs text-muted">Mesmas saídas, custos e banca, com entradas sorteadas na mesma frequência.</p>
+          <p className="mt-2 text-xs text-muted">Mesmo payout, valor e banca, com a direção sorteada na mesma frequência. Com payout abaixo de 100%, aleatório perde.</p>
         </div>
         <div className="card p-3">
           <div className="mb-2 text-sm font-medium">Monte Carlo (ordem embaralhada)</div>
@@ -127,14 +136,13 @@ export function Results({ r, randomPending, loadWindow }: {
       </div>
 
       <div className="grid gap-3 lg:grid-cols-2">
-        <div className="card overflow-x-auto p-3">
-          <div className="mb-2 text-sm font-medium">Por par</div>
-          <table className="num w-full text-xs">
-            <thead><tr className="text-left text-muted"><th className="font-normal">par</th><th className="font-normal">op.</th><th className="font-normal">acerto</th><th className="font-normal">R/op</th><th className="font-normal">líquido</th></tr></thead>
-            <tbody>{Object.entries(r.bySymbol).sort((a, b) => b[1].netUsd - a[1].netUsd).map(([s, x]) => (
-              <tr key={s} className="border-t border-line"><td className="py-1">{s}</td><td>{x.trades}</td><td>{f(x.winRate, 0)}%</td><td className={sign(x.avgR)}>{f(x.avgR, 3)}</td><td className={sign(x.netUsd)}>{usd(x.netUsd)}</td></tr>
-            ))}</tbody>
-          </table>
+        <div className="card p-3">
+          <div className="mb-2 text-sm font-medium">Payout e ponto de equilíbrio</div>
+          <div className="num space-y-0.5 text-sm">
+            <div>payout: {r.strategy.binary.payoutPct}% · aposta {r.strategy.binary.stakeMode === "fixed" ? usd(r.strategy.binary.stake) : `${f(r.strategy.binary.stake, 1)}% da banca`}</div>
+            <div>acerto mínimo para empatar: {f(be, 2)}%</div>
+            <div className={m.winRate >= be ? "text-up" : "text-down"}>seu acerto: {f(m.winRate, 2)}% ({m.winRate >= be ? "+" : ""}{f(m.winRate - be, 2)} pontos)</div>
+          </div>
         </div>
         <div className="card p-3">
           <div className="mb-2 text-sm font-medium">Sinais ignorados</div>
@@ -146,7 +154,7 @@ export function Results({ r, randomPending, loadWindow }: {
 
       <div className="card overflow-x-auto p-3">
         <div className="mb-2 flex items-center justify-between text-sm font-medium">
-          <span>Operações ({r.trades.length}) — clique para ver no gráfico</span>
+          <span>Apostas ({r.trades.length}) — clique para ver no gráfico</span>
           <span className="flex items-center gap-1 text-xs font-normal">
             <button className="btn h-6 px-2" disabled={page === 0} onClick={() => setPage(page - 1)}>‹</button>
             {page + 1}/{Math.max(1, Math.ceil(trades.length / per))}
@@ -154,16 +162,16 @@ export function Results({ r, randomPending, loadWindow }: {
           </span>
         </div>
         <table className="num w-full text-xs">
-          <thead><tr className="text-left text-muted">{["entrada", "par", "preço", "saída", "motivo", "candles", "taxas", "líquido", "R", "banca"].map((h) => <th key={h} className="font-normal">{h}</th>)}</tr></thead>
+          <thead><tr className="text-left text-muted">{["sinal em", "aposta", "candle seguinte (abre → fecha)", "resultado em", "", "valor", "líquido", "banca"].map((h) => <th key={h} className="font-normal">{h}</th>)}</tr></thead>
           <tbody>
             {trades.slice(page * per, page * per + per).map((t, i) => (
               <tr key={i} className="cursor-pointer border-t border-line hover:bg-panel-2" onClick={async () => {
                 setLoading(t.entryTime);
                 try { setOpen({ t, w: await loadWindow(t) }); } finally { setLoading(null); }
               }}>
-                <td className="py-1">{loading === t.entryTime ? "carregando…" : date(t.entryTime)}</td><td>{t.symbol}</td>
-                <td>{price(t.entryPrice)} → {price(t.exitPrice)}</td><td>{date(t.exitTime)}</td><td>{REASON[t.reason]}</td><td>{t.bars}</td>
-                <td>{usd(t.feesUsd)}</td><td className={sign(t.pnlUsd)}>{usd(t.pnlUsd)}</td><td className={sign(t.r)}>{f(t.r, 2)}</td><td>{usd(t.equityAfter)}</td>
+                <td className="py-1">{loading === t.entryTime ? "carregando…" : date(t.entryTime)}</td><td>{SIDE(t)}</td>
+                <td>{price(t.entryPrice)} → {price(t.exitPrice)}</td><td>{date(t.exitTime)}</td><td className={sign(t.pnlUsd)}>{REASON[t.reason]}</td>
+                <td>{usd(t.riskUsd)}</td><td className={sign(t.pnlUsd)}>{usd(t.pnlUsd)}</td><td>{usd(t.equityAfter)}</td>
               </tr>
             ))}
           </tbody>
@@ -174,10 +182,10 @@ export function Results({ r, randomPending, loadWindow }: {
         <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/60 p-4" onClick={() => setOpen(null)}>
           <div className="card w-full max-w-5xl p-3" onClick={(e) => e.stopPropagation()}>
             <div className="mb-2 flex items-center justify-between text-sm">
-              <span>{open.t.symbol} · {date(open.t.entryTime)} · {REASON[open.t.reason]} · <span className={sign(open.t.pnlUsd)}>{usd(open.t.pnlUsd)} ({f(open.t.r, 2)}R)</span></span>
+              <span>{open.t.symbol} · {date(open.t.entryTime)} · {SIDE(open.t)} · <span className={sign(open.t.pnlUsd)}>{REASON[open.t.reason]} {usd(open.t.pnlUsd)}</span></span>
               <button onClick={() => setOpen(null)} className="text-muted hover:text-text"><X size={18} /></button>
             </div>
-            <TradeChart candles={open.w.candles} overlays={open.w.overlays} stop={open.t.stopInitial}
+            <TradeChart candles={open.w.candles} overlays={open.w.overlays} side={open.t.side}
               entry={{ t: snap(open.w.candles, open.t.entryTime), p: open.t.entryPrice }}
               exit={{ t: snap(open.w.candles, open.t.exitTime), p: open.t.exitPrice, win: open.t.pnlUsd > 0 }} />
           </div>

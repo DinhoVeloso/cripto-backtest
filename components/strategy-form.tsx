@@ -2,10 +2,10 @@
 import { useMemo, useState } from "react";
 import { Plus, Trash2 } from "lucide-react";
 import { CATALOG, defaultParams } from "@/lib/engine/catalog";
-import { FEE_PRESETS } from "@/lib/engine/templates";
+import { breakEvenPct } from "@/lib/engine/binary";
 import type { Manifest } from "@/lib/engine/data";
 import type { IndicatorDef, Strategy } from "@/lib/engine/types";
-import { GroupEditor, OperandPicker } from "./rule-editor";
+import { GroupEditor } from "./rule-editor";
 
 const TFS = ["1m", "3m", "5m"];
 const TF_RANK: Record<string, number> = Object.fromEntries(TFS.map((t, i) => [t, i]));
@@ -51,7 +51,7 @@ export function StrategyForm({ st, set, manifest }: { st: Strategy; set: (s: Str
     <div className="text-sm">
       <Section title="Mercado e período" open note={`${st.symbols.length} par(es) · ${st.tf}`}>
         <div>
-          <span className="lbl">Pares (spot, contra USDT)</span>
+          <span className="lbl">Par (um por vez)</span>
           <input className="inp mb-1.5 w-full" placeholder="buscar…" value={query} onChange={(e) => setQuery(e.target.value.toUpperCase())} />
           <div className="grid max-h-40 grid-cols-3 gap-1 overflow-y-auto">
             {symbols.filter((s) => s.includes(query)).map((s) => (
@@ -76,7 +76,7 @@ export function StrategyForm({ st, set, manifest }: { st: Strategy; set: (s: Str
           <label><span className="lbl">Até</span><input className="inp w-full" type="date" value={st.to} onChange={(e) => set({ ...st, to: e.target.value })} /></label>
         </div>
         {earliest && earliest > st.from && <p className="text-xs text-warn">Algum par escolhido só tem dados a partir de {earliest}.</p>}
-        <p className="text-xs text-muted">Spot: só operações de compra (não existe venda a descoberto).</p>
+        <p className="text-xs text-muted">Opções binárias de 1 candle: o resultado sai no fechamento do candle seguinte.</p>
       </Section>
 
       <Section title="Indicadores" open note={`${st.indicators.length}`}>
@@ -130,101 +130,43 @@ export function StrategyForm({ st, set, manifest }: { st: Strategy; set: (s: Str
         </div>
       </Section>
 
-      <Section title="Entrada (compra)" open>
+      <Section title="Sobe (compra) quando…" open note={`${st.entry.long?.items.length ?? 0} condição(ões)`}>
         <GroupEditor st={st} g={st.entry.long ?? { mode: "all", items: [] }} onChange={(g) => up("entry", { long: g })} />
-        <div className="grid grid-cols-2 gap-2">
-          <label><span className="lbl">Tipo de ordem</span>
-            <select className="inp w-full" value={st.entry.order} onChange={(e) => up("entry", { order: e.target.value as Strategy["entry"]["order"] })}>
-              <option value="market">A mercado (abertura seguinte)</option>
-              <option value="limit">Limitada abaixo do fechamento</option>
-              <option value="stop">Stop no rompimento da máxima</option>
-            </select>
-          </label>
-          {st.entry.order !== "market" && <Num label="Distância" suffix="%" step={0.05} value={st.entry.offsetPct} onChange={(v) => up("entry", { offsetPct: v })} />}
-          {st.entry.order !== "market" && <Num label="Validade" suffix="candles" min={1} value={st.entry.validBars} onChange={(v) => up("entry", { validBars: v })} />}
-          <Num label="Espera após sair" suffix="candles" min={0} value={st.entry.cooldownBars} onChange={(v) => up("entry", { cooldownBars: v })} />
-        </div>
       </Section>
 
-      <Section title="Stop" note={st.stop.type}>
-        <div className="grid grid-cols-2 gap-2">
-          <label><span className="lbl">Tipo</span>
-            <select className="inp w-full" value={st.stop.type} onChange={(e) => up("stop", { type: e.target.value as Strategy["stop"]["type"] })}>
-              <option value="percent">% fixo</option>
-              <option value="atr">Múltiplo do ATR</option>
-              <option value="swing">Mínima dos últimos N candles</option>
-              <option value="indicator">Valor de um indicador</option>
-              <option value="none">Sem stop (não recomendado)</option>
-            </select>
-          </label>
-          {(st.stop.type === "percent" || st.stop.type === "atr") && <Num label={st.stop.type === "percent" ? "Distância" : "Múltiplo"} suffix={st.stop.type === "percent" ? "%" : "x ATR"} step={0.1} value={st.stop.value} onChange={(v) => up("stop", { value: v })} />}
-          {st.stop.type === "atr" && <Num label="Período do ATR" value={st.stop.atrPeriod} min={1} onChange={(v) => up("stop", { atrPeriod: v })} />}
-          {st.stop.type === "swing" && <Num label="N candles" value={st.stop.lookback} min={1} onChange={(v) => up("stop", { lookback: v })} />}
-          {(st.stop.type === "swing" || st.stop.type === "indicator") && <Num label="Folga" suffix="%" step={0.05} value={st.stop.bufferPct} onChange={(v) => up("stop", { bufferPct: v })} />}
-          <Num label="Stop mínimo" suffix="%" step={0.1} value={st.stop.minPct} onChange={(v) => up("stop", { minPct: v })} hint="Sinais com stop mais curto são ignorados (o custo comeria o resultado)" />
-          <Num label="Stop máximo" suffix="%" step={0.5} value={st.stop.maxPct} onChange={(v) => up("stop", { maxPct: v })} />
-        </div>
-        {st.stop.type === "indicator" && <OperandPicker st={st} value={st.stop.operand ?? { kind: "price", field: "low" }} onChange={(o) => up("stop", { operand: o })} allowNum={false} />}
+      <Section title="Desce (venda) quando…" open note={`${st.entry.short?.items.length ?? 0} condição(ões)`}>
+        <GroupEditor st={st} g={st.entry.short ?? { mode: "all", items: [] }} onChange={(g) => up("entry", { short: g })} />
       </Section>
 
-      <Section title="Alvo" note={st.target.type}>
+      <Section title="Aposta e payout" open note={`${st.binary.payoutPct}% · acerto mínimo ${breakEvenPct(st.binary.payoutPct).toFixed(1)}%`}>
         <div className="grid grid-cols-2 gap-2">
-          <label><span className="lbl">Tipo</span>
-            <select className="inp w-full" value={st.target.type} onChange={(e) => up("target", { type: e.target.value as Strategy["target"]["type"] })}>
-              <option value="rr">Múltiplo do risco (R)</option>
-              <option value="percent">% fixo</option>
-              <option value="indicator">Nível de um indicador (acompanha)</option>
-              <option value="none">Sem alvo (sai pelas regras de saída)</option>
-            </select>
-          </label>
-          {(st.target.type === "rr" || st.target.type === "percent") && <Num label={st.target.type === "rr" ? "Risco:retorno" : "Distância"} suffix={st.target.type === "rr" ? "R" : "%"} step={0.1} value={st.target.value} onChange={(v) => up("target", { value: v })} />}
-        </div>
-        {st.target.type === "indicator" && <OperandPicker st={st} value={st.target.operand ?? { kind: "price", field: "high" }} onChange={(o) => up("target", { operand: o })} allowNum={false} />}
-      </Section>
-
-      <Section title="Saída e gestão da posição">
-        <span className="lbl">Sair quando (avaliado no fechamento; sai na abertura seguinte)</span>
-        <GroupEditor st={st} g={st.exit.long ?? { mode: "any", items: [] }} onChange={(g) => up("exit", { long: g })} />
-        <div className="grid grid-cols-2 gap-2">
-          <Num label="Tempo máximo" suffix="candles, 0 = livre" min={0} value={st.exit.maxBars} onChange={(v) => up("exit", { maxBars: v })} />
-          <Num label="Mover stop p/ entrada em" suffix="R, 0 = não" step={0.1} min={0} value={st.exit.breakevenAtR} onChange={(v) => up("exit", { breakevenAtR: v })} />
-          <label><span className="lbl">Stop móvel</span>
-            <select className="inp w-full" value={st.exit.trailing.type} onChange={(e) => up("exit", { trailing: { ...st.exit.trailing, type: e.target.value as "none" } })}>
-              <option value="none">Desligado</option><option value="percent">% abaixo da máxima</option><option value="atr">ATR abaixo da máxima</option>
-            </select>
-          </label>
-          {st.exit.trailing.type !== "none" && <Num label="Distância" suffix={st.exit.trailing.type === "percent" ? "%" : "x ATR"} step={0.1} value={st.exit.trailing.value} onChange={(v) => up("exit", { trailing: { ...st.exit.trailing, value: v } })} />}
-          <Num label="Parcial em" suffix="R, 0 = não" step={0.1} min={0} value={st.exit.partial.atR} onChange={(v) => up("exit", { partial: { ...st.exit.partial, atR: v } })} />
-          {st.exit.partial.atR > 0 && <Num label="Fração da parcial" suffix="0 a 1" step={0.05} min={0} max={1} value={st.exit.partial.fraction} onChange={(v) => up("exit", { partial: { ...st.exit.partial, fraction: v } })} />}
-        </div>
-      </Section>
-
-      <Section title="Banca e risco" note={`US$ ${st.risk.capital}`}>
-        <div className="grid grid-cols-2 gap-2">
+          <Num label="Payout" suffix="% do valor" step={1} min={1} max={500} value={st.binary.payoutPct} onChange={(v) => up("binary", { payoutPct: v })} hint="Quanto a corretora paga sobre o valor apostado quando você acerta. Quando erra, perde o valor inteiro." />
           <Num label="Banca inicial" suffix="US$" min={1} value={st.risk.capital} onChange={(v) => up("risk", { capital: v })} />
-          <Num label="Risco por operação" suffix="%" step={0.1} value={st.risk.riskPct} onChange={(v) => up("risk", { riskPct: v })} />
-          <Num label="Teto por posição" suffix="% da banca" value={st.risk.maxPositionPct} onChange={(v) => up("risk", { maxPositionPct: v })} />
-          <Num label="Reserva intocável" suffix="%" value={st.risk.cashBufferPct} onChange={(v) => up("risk", { cashBufferPct: v })} />
-          <Num label="Posições ao mesmo tempo" min={1} value={st.risk.maxOpen} onChange={(v) => up("risk", { maxOpen: v })} />
-          <Num label="Operações por dia" suffix="0 = livre" min={0} value={st.risk.maxTradesDay} onChange={(v) => up("risk", { maxTradesDay: v })} />
-          <Num label="Perda máxima no dia" suffix="%, 0 = livre" step={0.5} min={0} value={st.risk.maxLossDayPct} onChange={(v) => up("risk", { maxLossDayPct: v })} />
-          <Num label="Compra mínima" suffix="US$" step={1} min={0} value={st.risk.minNotional} onChange={(v) => up("risk", { minNotional: v })} />
+          <label><span className="lbl">Valor da aposta</span>
+            <select className="inp w-full" value={st.binary.stakeMode} onChange={(e) => up("binary", { stakeMode: e.target.value as "fixed" | "percent" })}>
+              <option value="fixed">Fixo (US$)</option>
+              <option value="percent">% da banca atual</option>
+            </select>
+          </label>
+          <Num label="Valor" suffix={st.binary.stakeMode === "fixed" ? "US$" : "% da banca"} step={st.binary.stakeMode === "fixed" ? 0.5 : 0.5} min={0.01} value={st.binary.stake} onChange={(v) => up("binary", { stake: v })} />
         </div>
+        <p className="text-xs text-muted">Você aposta durante o candle do sinal (antes dos 5 segundos finais) e o resultado é a <b>cor do candle seguinte</b>: verde = &quot;sobe&quot; ganha, vermelho = &quot;desce&quot; ganha. O preço de entrada não conta.</p>
+        <p className="text-xs text-muted">Com payout de {st.binary.payoutPct}% você precisa acertar mais de {breakEvenPct(st.binary.payoutPct).toFixed(1)}% das apostas só para não perder dinheiro.</p>
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-accent" checked={st.binary.allowOverlap} onChange={(e) => up("binary", { allowOverlap: e.target.checked })} />
+          permitir várias apostas abertas ao mesmo tempo
+        </label>
+        <label className="flex items-center gap-2 text-xs" title="Desligado: continua apostando o mesmo valor mesmo depois de a banca acabar (a banca fica negativa), para ver se a estratégia tem vantagem no período todo."><input type="checkbox" className="accent-accent" checked={!!st.binary.stopWhenBroke} onChange={(e) => up("binary", { stopWhenBroke: e.target.checked })} />
+          parar de apostar quando a banca não cobrir o valor
+        </label>
       </Section>
 
-      <Section title="Custos" note={FEE_PRESETS[st.costs.preset]?.label ?? "personalizado"}>
-        <label className="block"><span className="lbl">Corretora</span>
-          <select className="inp w-full" value={FEE_PRESETS[st.costs.preset] ? st.costs.preset : ""} onChange={(e) => { const p = FEE_PRESETS[e.target.value]; if (p) up("costs", { preset: e.target.value, takerPct: p.takerPct, makerPct: p.makerPct, slippagePct: p.slippagePct }); }}>
-            {!FEE_PRESETS[st.costs.preset] && <option value="">personalizado</option>}
-            {Object.entries(FEE_PRESETS).map(([k, v]) => <option key={k} value={k}>{v.label}</option>)}
-          </select>
+      <Section title="Pausa depois de perder" note={st.binary.rearm ? "ligada" : "desligada"}>
+        <label className="flex items-center gap-2 text-xs"><input type="checkbox" className="accent-accent" checked={!!st.binary.rearm}
+          onChange={(e) => up("binary", { rearm: e.target.checked ? { mode: "all", items: [] } : undefined })} />
+          depois de uma aposta perdida, parar até o candle cumprir esta condição
         </label>
-        <div className="grid grid-cols-3 gap-2">
-          <Num label="Taxa taker" suffix="%" step={0.005} value={st.costs.takerPct} onChange={(v) => up("costs", { takerPct: v, preset: "custom" })} />
-          <Num label="Taxa maker" suffix="%" step={0.005} value={st.costs.makerPct} onChange={(v) => up("costs", { makerPct: v, preset: "custom" })} />
-          <Num label="Slippage" suffix="% por lado" step={0.005} value={st.costs.slippagePct} onChange={(v) => up("costs", { slippagePct: v, preset: "custom" })} />
-        </div>
-        <p className="text-xs text-muted">Taker: ordens a mercado, stops e saídas por regra. Maker: alvos e ordens limitadas.</p>
+        {st.binary.rearm && <GroupEditor st={st} g={st.binary.rearm} onChange={(g) => up("binary", { rearm: g })} />}
+        {st.binary.rearm && <p className="text-xs text-muted">Vale a partir do candle seguinte à perda. Ex.: o candle toca o meio do canal (mínima ≤ meio e máxima ≥ meio). Em indicadores que usam o candle atual (Bollinger, médias, IFR), use &quot;1 atrás&quot;.</p>}
       </Section>
 
       <Section title="Validação">

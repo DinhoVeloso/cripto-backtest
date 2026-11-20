@@ -1,8 +1,8 @@
 // Roda no navegador, fora da tela (Web Worker): baixa os dados, calcula e devolve o resultado.
 import { loadSeries, type Manifest, type Series } from "./data";
-import { prepare, TF, type DataSet } from "./backtest";
+import { TF, type DataSet } from "./backtest";
+import { addRandomWarningBinary, prepareBinary, randomBaselineBinary, summarizeBinary } from "./binary";
 import { CATALOG } from "./catalog";
-import { addRandomWarning, randomBaseline, summarize } from "./stats";
 import type { Strategy } from "./types";
 
 export type WorkerIn =
@@ -50,7 +50,7 @@ async function loadAll(st: Strategy, url: string, onMsg: (m: string) => void): P
     if (x.kind === "price" && (x.tf || x.symbol)) for (const s of x.symbol ? [String(x.symbol)] : st.symbols) add(s, String(x.tf || st.tf));
     for (const v of Object.values(x)) if (typeof v === "object") walk(v);
   };
-  walk(st.entry); walk(st.exit); walk(st.stop); walk(st.target);
+  walk(st.entry); walk(st.binary);
   const data: DataSet = {};
   let done = 0;
   const total = [...need.values()].reduce((a, s) => a + s.size, 0);
@@ -99,15 +99,15 @@ self.onmessage = async (ev: MessageEvent<WorkerIn>) => {
     const st = msg.strategy;
     const from = toSec(st.from);
     const t0 = performance.now();
-    const prepared = prepare(st, data);
+    const prepared = prepareBinary(st, data);
     if (!prepared.length) throw new Error("nenhum par com dados no período escolhido");
-    const result = summarize(st, prepared, t0, from);
+    const result = summarizeBinary(st, prepared, t0, from);
     post({ type: "result", id: msg.id, result });
     if (st.validation.randomRuns > 0) {
-      post({ type: "progress", id: msg.id, msg: "comparando com entradas aleatórias" });
-      result.random = randomBaseline(st, prepared, result, from);
+      post({ type: "progress", id: msg.id, msg: "comparando com apostas aleatórias" });
+      result.random = randomBaselineBinary(st, prepared, result, from);
       const before = result.warnings.length;
-      addRandomWarning(result);
+      addRandomWarningBinary(result);
       post({ type: "random", id: msg.id, random: result.random, warnings: result.warnings.slice(before) });
     }
   } catch (e) {

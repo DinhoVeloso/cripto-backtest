@@ -26,7 +26,7 @@ export const BASE: Strategy = {
   tf: "5m",
   from: monthsAgo(6),
   to: iso(today),
-  side: "long",
+  side: "both",
   indicators: [],
   entry: { order: "market", offsetPct: 0, validBars: 3, cooldownBars: 0, long: { mode: "all", items: [] } },
   stop: { type: "percent", value: 2, atrPeriod: 14, lookback: 5, bufferPct: 0, minPct: 0.3, maxPct: 10 },
@@ -35,6 +35,7 @@ export const BASE: Strategy = {
   risk: { capital: 100, riskPct: 1, maxPositionPct: 75, cashBufferPct: 10, maxOpen: 3, maxTradesDay: 0, maxLossDayPct: 0, minNotional: 5 },
   costs: { preset: "binance_spot", ...pick(FEE_PRESETS.binance_spot) },
   validation: { testPct: 30, randomRuns: 30, monteCarloRuns: 1000, seed: 42 },
+  binary: { payoutPct: 85, stakeMode: "fixed", stake: 2, allowOverlap: false },
 };
 
 function pick(p: { takerPct: number; makerPct: number; slippagePct: number }) {
@@ -43,89 +44,61 @@ function pick(p: { takerPct: number; makerPct: number; slippagePct: number }) {
 
 const make = (over: Partial<Strategy>): Strategy => ({ ...structuredClone(BASE), ...over });
 
+const px = (field: "open" | "high" | "low" | "close"): Operand => ({ kind: "price", field });
+const grp = (...items: Cond[]) => ({ mode: "all" as const, items });
+
+// Todas as estratégias são de opções binárias: entry.long = "sobe", entry.short = "desce".
 export const TEMPLATES: Record<string, { label: string; about: string; strategy: Strategy }> = {
-  pctb: {
-    label: "%B 20/2: volta para dentro da banda",
-    about: "Compra quando o %B fecha abaixo de 0 e o candle seguinte fecha de volta acima de 0. Stop na mínima dos últimos 5 candles; alvo na média de 20. Já testamos: sem filtro, perde em 5m.",
+  donchian_touch: {
+    label: "Donchian: toque nas bordas (reversão)",
+    about: "Toca a borda superior do canal de Donchian(20) -> desce; toca a inferior -> sobe. A aposta vale pela cor do candle seguinte. Se errar, para de apostar até o preço voltar ao meio do canal e tocar uma borda de novo.",
     strategy: make({
-      name: "%B reentrada", tf: "5m",
+      name: "Donchian toque", tf: "5m",
+      indicators: [{ id: "dc", type: "donchian", params: { period: 20 } }],
+      entry: { ...BASE.entry, long: grp(c(px("low"), "<=", ind("dc", "lower"))), short: grp(c(px("high"), ">=", ind("dc", "upper"))) },
+      binary: {
+        ...BASE.binary,
+        rearm: grp(c(px("low"), "<=", ind("dc", "mid")), c(px("high"), ">=", ind("dc", "mid"))),
+      },
+    }),
+  },
+  donchian_touch_free: {
+    label: "Donchian: toque nas bordas (sem pausa após perda)",
+    about: "Igual ao anterior, mas continua apostando depois de uma perda. Serve para ver quanto a regra de pausa ajuda ou atrapalha.",
+    strategy: make({
+      name: "Donchian toque sem pausa", tf: "5m",
+      indicators: [{ id: "dc", type: "donchian", params: { period: 20 } }],
+      entry: { ...BASE.entry, long: grp(c(px("low"), "<=", ind("dc", "lower"))), short: grp(c(px("high"), ">=", ind("dc", "upper"))) },
+    }),
+  },
+  bb_touch: {
+    label: "Bollinger 20/2: toque nas bandas (reversão)",
+    about: "Toca a banda superior -> desce; toca a inferior -> sobe. Usa a banda do candle anterior (a do candle atual já conteria o fechamento dele). Pausa depois de uma perda até tocar a média.",
+    strategy: make({
+      name: "Bollinger toque", tf: "5m",
       indicators: [{ id: "bb", type: "bollinger", params: { period: 20, mult: 2, source: "close" } }],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(ind("bb", "pctb"), "crossAbove", n(0))] } },
-      stop: { ...BASE.stop, type: "swing", lookback: 5, minPct: 0.6, maxPct: 5 },
-      target: { type: "indicator", value: 0, operand: ind("bb", "mid") },
-      exit: { ...BASE.exit, maxBars: 288 },
+      entry: { ...BASE.entry, long: grp(c(px("low"), "<=", ind("bb", "lower", 1))), short: grp(c(px("high"), ">=", ind("bb", "upper", 1))) },
+      binary: {
+        ...BASE.binary,
+        rearm: grp(c(px("low"), "<=", ind("bb", "mid", 1)), c(px("high"), ">=", ind("bb", "mid", 1))),
+      },
     }),
   },
-  pctb_trend: {
-    label: "%B com tendência de 5m e ADX",
-    about: "O %B acima, só quando o gráfico de 5m está em alta (EMA50 > EMA200) e o ADX de 1m está abaixo de 25.",
+  rsi_extreme: {
+    label: "IFR extremo: sobe abaixo de 30, desce acima de 70",
+    about: "Avalia no fechamento do candle: IFR(14) abaixo de 30 -> sobe; acima de 70 -> desce.",
     strategy: make({
-      name: "%B + tendência 5m + ADX", tf: "1m",
-      indicators: [
-        { id: "bb", type: "bollinger", params: { period: 20, mult: 2, source: "close" } },
-        { id: "ema50h", type: "ema", params: { period: 50, source: "close" }, tf: "5m" },
-        { id: "ema200h", type: "ema", params: { period: 200, source: "close" }, tf: "5m" },
-        { id: "adx", type: "adx", params: { period: 14 } },
-      ],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(ind("bb", "pctb"), "crossAbove", n(0)), c(ind("ema50h"), ">", ind("ema200h")), c(ind("adx", "adx"), "<", n(25))] } },
-      stop: { ...BASE.stop, type: "swing", lookback: 5, minPct: 0.6, maxPct: 5 },
-      target: { type: "indicator", value: 0, operand: ind("bb", "mid") },
-      exit: { ...BASE.exit, maxBars: 288 },
+      name: "IFR extremo", tf: "5m",
+      indicators: [{ id: "rsi", type: "rsi", params: { period: 14, source: "close" } }],
+      entry: { ...BASE.entry, long: grp(c(ind("rsi"), "<", n(30))), short: grp(c(ind("rsi"), ">", n(70))) },
     }),
   },
-  bb3: {
-    label: "Bollinger 3 desvios (reversão à média)",
-    about: "Candle fecha abaixo da banda inferior de 3 desvios; compra no rompimento da máxima desse candle (ordem stop válida por 5 candles). Stop na mínima recente; alvo na média.",
+  streak3: {
+    label: "3 candles seguidos na mesma direção (reversão)",
+    about: "Depois de 3 fechamentos seguidos de queda -> sobe; depois de 3 de alta -> desce. Entra no fechamento.",
     strategy: make({
-      name: "Bollinger 3σ", tf: "5m",
-      indicators: [{ id: "bb", type: "bollinger", params: { period: 20, mult: 3, source: "close" } }],
-      entry: { ...BASE.entry, order: "stop", validBars: 5, long: { mode: "all", items: [c(close, "<", ind("bb", "lower"))] } },
-      stop: { ...BASE.stop, type: "swing", lookback: 3, minPct: 0.6, maxPct: 10 },
-      target: { type: "indicator", value: 0, operand: ind("bb", "mid") },
-      exit: { ...BASE.exit, maxBars: 288 },
-    }),
-  },
-  orb: {
-    label: "Rompimento da faixa de abertura (ORB)",
-    about: "Faixa dos primeiros 15 minutos do dia (UTC). Compra quando um candle fecha acima da máxima da faixa; stop na mínima da faixa; alvo 2R.",
-    strategy: make({
-      name: "ORB 15 min", tf: "5m",
-      indicators: [{ id: "or", type: "sessionRange", params: { minutes: 15 } }],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(close, "crossAbove", ind("or", "high"))] } },
-      stop: { ...BASE.stop, type: "indicator", operand: ind("or", "low"), minPct: 0.6, maxPct: 3 },
-      target: { type: "rr", value: 2 },
-      exit: { ...BASE.exit, maxBars: 48 },
-      risk: { ...BASE.risk, maxTradesDay: 5 },
-    }),
-  },
-  donchian: {
-    label: "Rompimento de 20 candles com filtro",
-    about: "Fecha acima da máxima dos 20 candles anteriores, com preço acima da EMA200 e volume 1,5x a média. Stop na mínima dos últimos 5; alvo 2R.",
-    strategy: make({
-      name: "Rompe 20 + EMA200 + volume", tf: "5m",
-      indicators: [
-        { id: "dc", type: "donchian", params: { period: 20 } },
-        { id: "ema200", type: "ema", params: { period: 200, source: "close" } },
-        { id: "vol", type: "volsma", params: { period: 20 } },
-      ],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(close, ">", ind("dc", "upper")), c(close, ">", ind("ema200")), c(ind("vol", "ratio"), ">=", n(1.5))] } },
-      stop: { ...BASE.stop, type: "swing", lookback: 5, minPct: 0.6, maxPct: 3 },
-      target: { type: "rr", value: 2 },
-      exit: { ...BASE.exit, maxBars: 288 },
-    }),
-  },
-  macd: {
-    label: "Cruzamento do MACD acima da EMA200",
-    about: "Linha do MACD cruza a linha de sinal para cima abaixo de zero, com preço acima da EMA200. Stop de 1,5 ATR; alvo 2R.",
-    strategy: make({
-      name: "MACD + EMA200", tf: "5m",
-      indicators: [
-        { id: "macd", type: "macd", params: { fast: 12, slow: 26, signal: 9, source: "close" } },
-        { id: "ema200", type: "ema", params: { period: 200, source: "close" } },
-      ],
-      entry: { ...BASE.entry, long: { mode: "all", items: [c(ind("macd", "line"), "crossAbove", ind("macd", "signal")), c(ind("macd", "line"), "<", n(0)), c(close, ">", ind("ema200"))] } },
-      stop: { ...BASE.stop, type: "atr", value: 1.5, atrPeriod: 14, minPct: 0.4, maxPct: 10 },
-      target: { type: "rr", value: 2 },
+      name: "Sequência de 3", tf: "1m",
+      entry: { ...BASE.entry, long: grp(c(close, "fallingFor", close, 3)), short: grp(c(close, "risingFor", close, 3)) },
     }),
   },
 };

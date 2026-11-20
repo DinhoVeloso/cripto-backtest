@@ -10,15 +10,15 @@ type Provider = { id: string; label: string; model: string };
 /** Resumo enxuto do backtest para o especialista (sem a lista inteira de operações). */
 function summarize(r: Result | null) {
   if (!r) return null;
-  const pick = (m: Result["metrics"]) => ({ operacoes: m.trades, acerto: +m.winRate.toFixed(1), rPorOp: +m.avgR.toFixed(3), ic95: [+m.ciLow.toFixed(3), +m.ciHigh.toFixed(3)], liquidoUsd: +m.netUsd.toFixed(2), brutoUsd: +m.grossUsd.toFixed(2), taxasUsd: +m.feesUsd.toFixed(2), quedaMaxPct: +m.maxDdPct.toFixed(1), fatorLucro: +m.profitFactor.toFixed(2) });
+  const pick = (m: Result["metrics"]) => ({ apostas: m.trades, acerto: +m.winRate.toFixed(1), lucroPorApostaFracao: +m.avgR.toFixed(3), ic95: [+m.ciLow.toFixed(3), +m.ciHigh.toFixed(3)], liquidoUsd: +m.netUsd.toFixed(2), brutoUsd: +m.grossUsd.toFixed(2), taxasUsd: +m.feesUsd.toFixed(2), quedaMaxPct: +m.maxDdPct.toFixed(1), fatorLucro: +m.profitFactor.toFixed(2) });
   const years: Record<string, number> = {};
   for (const [k, v] of Object.entries(r.monthly)) years[k.slice(0, 4)] = +(((1 + (years[k.slice(0, 4)] ?? 0) / 100) * (1 + v / 100) - 1) * 100).toFixed(1);
   const reasons: Record<string, number> = {};
   for (const t of r.trades) reasons[t.reason] = (reasons[t.reason] ?? 0) + 1;
   return {
-    geral: { ...pick(r.metrics), retornoPct: +r.metrics.returnPct.toFixed(1), cagrPct: +r.metrics.cagrPct.toFixed(1), sharpe: +r.metrics.sharpe.toFixed(2), candlesMedios: +r.metrics.avgBars.toFixed(0) },
+    geral: { acertoMinimoPct: +(100 / (1 + r.strategy.binary.payoutPct / 100)).toFixed(1), payoutPct: r.strategy.binary.payoutPct, ...pick(r.metrics), retornoPct: +r.metrics.returnPct.toFixed(1), cagrPct: +r.metrics.cagrPct.toFixed(1), sharpe: +r.metrics.sharpe.toFixed(2), candlesMedios: +r.metrics.avgBars.toFixed(0) },
     treino: pick(r.train), validacao: pick(r.test), aleatorio: r.random, monteCarlo: r.monteCarlo, porAno: years,
-    porPar: Object.fromEntries(Object.entries(r.bySymbol).map(([s, m]) => [s, { op: m.trades, rPorOp: +m.avgR.toFixed(3), liquidoUsd: +m.netUsd.toFixed(2) }])),
+    porPar: Object.fromEntries(Object.entries(r.bySymbol).map(([s, m]) => [s, { op: m.trades, lucroPorApostaFracao: +m.avgR.toFixed(3), liquidoUsd: +m.netUsd.toFixed(2) }])),
     motivosDeSaida: reasons, sinais: r.signals, ignorados: r.skipped, avisos: r.warnings,
   };
 }
@@ -34,7 +34,7 @@ function extractStrategy(text: string): Strategy | null {
     const symbols = (Array.isArray(s.symbols) && s.symbols.length ? s.symbols : b.symbols).map((x: string) => { const u = String(x).toUpperCase().replace(/[^A-Z0-9]/g, ""); return /(USDT|BRL)$/.test(u) ? u : `${u}USDT`; });
     const tf = ["1m", "3m", "5m"].includes(s.tf) ? s.tf : b.tf;
     const date = (d: unknown, fb: string) => (typeof d === "string" && /^\d{4}-\d{2}-\d{2}$/.test(d) ? d : fb);
-    return { ...b, ...s, symbols, tf, from: date(s.from, b.from), to: date(s.to, b.to), side: "long", entry: { ...b.entry, ...s.entry }, stop: { ...b.stop, ...s.stop }, target: { ...b.target, ...s.target },
+    return { ...b, ...s, symbols: symbols.slice(0, 1), tf, from: date(s.from, b.from), to: date(s.to, b.to), side: "both", entry: { ...b.entry, ...s.entry }, binary: { ...b.binary, ...s.binary }, stop: { ...b.stop, ...s.stop }, target: { ...b.target, ...s.target },
       exit: { ...b.exit, ...s.exit, trailing: { ...b.exit.trailing, ...s.exit?.trailing }, partial: { ...b.exit.partial, ...s.exit?.partial } },
       risk: { ...b.risk, ...s.risk }, costs: { ...b.costs, ...s.costs }, validation: { ...b.validation, ...s.validation } };
   } catch { return null; }
@@ -48,9 +48,9 @@ function Text({ text }: { text: string }) {
 
 const SUGGESTIONS = [
   "Por que essa estratégia perde dinheiro?",
-  "Que filtro você testaria para melhorar só as compras?",
-  "Monte uma estratégia de rompimento no 5m com filtro de tendência",
-  "Quais fatores macro mais mexem com o preço do bitcoin?",
+  "Qual acerto eu preciso para lucrar com esse payout?",
+  "Que filtro você testaria para melhorar o sobe e o desce?",
+  "Monte uma estratégia de reversão com Bollinger e IFR no 1m",
 ];
 
 export function Chat({ strategy, result, onApply, onClose }: { strategy: Strategy; result: Result | null; onApply: (s: Strategy) => void; onClose: () => void }) {

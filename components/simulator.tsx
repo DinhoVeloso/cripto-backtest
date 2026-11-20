@@ -11,7 +11,7 @@ import { StrategyForm } from "./strategy-form";
 import { Results } from "./results";
 import { Chat } from "./chat";
 
-const KEY = "cb:strategy:v1";
+const KEY = "cb:strategy:v2";
 
 function loadSaved(): Strategy {
   try {
@@ -23,11 +23,11 @@ function loadSaved(): Strategy {
       if (okTf(saved.tf) && (saved.indicators ?? []).every((d) => okTf(d.tf))) return saved;
     }
   } catch { /* sem armazenamento: começa do modelo */ }
-  return structuredClone(TEMPLATES.pctb_trend.strategy);
+  return structuredClone(TEMPLATES.donchian_touch.strategy);
 }
 
 export function Simulator() {
-  const [st, setSt] = useState<Strategy>(() => structuredClone(TEMPLATES.pctb_trend.strategy));
+  const [st, setSt] = useState<Strategy>(() => structuredClone(TEMPLATES.donchian_touch.strategy));
   const [manifest, setManifest] = useState<Manifest | null>(null);
   const [result, setResult] = useState<Result | null>(null);
   const [status, setStatus] = useState<string>("");
@@ -69,7 +69,8 @@ export function Simulator() {
     const known = manifestRef.current?.symbols;
     const missing = known ? [...new Set([...st.symbols, ...st.indicators.map((i) => i.symbol).filter((x): x is string => !!x)])].filter((x) => !known[x]) : [];
     if (missing.length) { setError(`Par sem dados no simulador: ${missing.join(", ")}.`); return; }
-    if (!st.entry.long?.items.length) { setError("Defina pelo menos uma condição de entrada."); return; }
+    if (!st.entry.long?.items.length && !st.entry.short?.items.length) { setError("Defina pelo menos uma condição para \"sobe\" ou \"desce\"."); return; }
+    if (!(st.binary.payoutPct > 0)) { setError("Informe o payout."); return; }
     const id = ++seq.current;
     setBusy(true); setError(""); setStatus("baixando dados"); setRandomPending(false);
     waiters.current.clear();
@@ -96,7 +97,7 @@ export function Simulator() {
   return (
     <div className="flex h-dvh flex-col">
       <header className="flex flex-wrap items-center gap-2 border-b border-line bg-panel px-4 py-2">
-        <span className="mr-2 font-semibold">Cripto Backtest</span>
+        <span className="mr-2 font-semibold">Backtest de Binárias</span>
         <input className="inp w-56" value={st.name} onChange={(e) => setSt({ ...st, name: e.target.value })} title="Nome da estratégia" />
         <select className="inp w-64" value="" onChange={(e) => { const t = TEMPLATES[e.target.value]; if (t) { setSt(structuredClone(t.strategy)); setResult(null); } }}>
           <option value="">Carregar modelo pronto…</option>
@@ -116,8 +117,8 @@ export function Simulator() {
           {result ? <Results r={result} randomPending={randomPending} loadWindow={loadWindow} /> : (
             <div className="mx-auto mt-16 max-w-xl text-center text-sm text-muted">
               <p className="mb-2 text-base text-text">Monte a estratégia no painel à esquerda e clique em <b>Rodar backtest</b>.</p>
-              <p>Dados reais do BTCUSDT no spot da Binance, últimos 6 meses, em 1, 3 e 5 minutos. O cálculo roda no seu navegador e considera taxas, slippage, banca e limites de risco.</p>
-              <p className="mt-3">{st.symbols.length} par(es) · {st.tf} · {st.from} a {st.to}</p>
+              <p>Opções binárias de 1 candle com dados reais do BTCUSDT (Binance), últimos 6 meses, em 1, 3 e 5 minutos. Acertou o candle seguinte, ganha o payout; errou, perde o valor apostado. O cálculo roda no seu navegador.</p>
+              <p className="mt-3">{st.symbols[0] ?? "—"} · {st.tf} · {st.from} a {st.to} · payout {st.binary.payoutPct}%</p>
             </div>
           )}
         </main>
